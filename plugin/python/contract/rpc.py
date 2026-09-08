@@ -192,7 +192,9 @@ class PluginRPCHandler(BaseHTTPRequestHandler):
             active_model = None
             for result in resp.results:
                 if result.query_id == query_id and result.entries:
-                    active_model = int(result.entries[0].value.decode("utf-8"))
+                    raw = result.entries[0].value.decode("utf-8").strip()
+                    # Empty value means no active model registered yet
+                    active_model = int(raw) if raw else None
 
             response = {
                 "active": active_model,
