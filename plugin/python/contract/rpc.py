@@ -261,7 +261,9 @@ class PluginRPCHandler(BaseHTTPRequestHandler):
             feedback = None
             for result in resp.results:
                 if result.query_id == query_id and result.entries:
-                    feedback = json.loads(result.entries[0].value.decode("utf-8"))
+                    raw = result.entries[0].value.decode("utf-8").strip()
+                    # Empty value means no feedback recorded for this key yet
+                    feedback = json.loads(raw) if raw else None
 
             if feedback is None:
                 self._write_json_error(404, f"feedback not found for seq={seq}")
