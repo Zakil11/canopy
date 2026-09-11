@@ -149,10 +149,29 @@ class PluginRPCHandler(BaseHTTPRequestHandler):
             future = asyncio.run_coroutine_threadsafe(coro, self.plugin._loop)
             resp = future.result(timeout=15.0)
 
-            dashboard = {}
+            dashboard = None
             for result in resp.results:
                 if result.query_id == query_id and result.entries:
-                    dashboard = json.loads(result.entries[0].value.decode("utf-8"))
+                    raw = result.entries[0].value.decode("utf-8").strip()
+                    # Empty value means no dashboard record yet (fresh chain)
+                    if raw:
+                        dashboard = json.loads(raw)
+
+            if dashboard is None:
+                dashboard = {
+                    "total_predictions": 0,
+                    "class_counts": {},
+                    "accuracy": 0.0,
+                    "revenue": 0,
+                    "total_feedback": 0,
+                    "correct_feedback": 0,
+                    "total_staked": 0,
+                    "total_markets": 0,
+                    "resolved_markets": 0,
+                    "total_rewards": 0,
+                    "total_models": 0,
+                    "active_model": None,
+                }
 
             self._write_json({"dashboard": dashboard}, 200)
         except asyncio.TimeoutError:
