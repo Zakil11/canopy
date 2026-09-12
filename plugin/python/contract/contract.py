@@ -774,13 +774,35 @@ class Contract:
         # Persist prediction log under 100 (PREDICT_PREFIX) namespace
         seq = from_account.nonce
         predict_key = key_for_predict_log(msg.from_address, seq)
+
+        # Cross-chain oracle signature (deterministic hash of the prediction)
+        try:
+            from ensemble import oracle_signature as _oracle_sig
+            oracle_sig = _oracle_sig(
+                result.get("vector", features + [0.0] * (42 - len(features))
+                           if len(features) < 42 else features[:42]),
+                result.get("y", 0),
+                (result.get("action") or {}).get("y", 16),
+                (result.get("probs") or [0.0])[
+                    result.get("y", 0)] if result.get("probs") else 0.0,
+                0.0,  # timestamp (raw mode)
+                self.config.chain_id if self.config else 0,
+                0,   # height (fill from block context if available)
+            )
+        except Exception:
+            oracle_sig = None
+
         log_value = json.dumps({
             "y": result["y"],
+            "y_base": result.get("y_base", result["y"]),
             "class": result.get("class", ""),
             "top_probs": result.get("probs", [])[:3],
             "top3": result.get("top3", []),
             "feature_importance": result.get("feature_importance", []),
             "temperature": result.get("temperature", 1.5),
+            "ensemble": result.get("ensemble", {}),
+            "action": result.get("action", {}),
+            "oracle_sig": oracle_sig,
             "height": 0,
         }).encode("utf-8")
 

@@ -40,6 +40,23 @@ import json
 import os
 from collections import deque
 
+try:
+    from .ensemble import (
+        get_ensemble,
+        action_class,
+        action_name,
+        ALL_CLASSES,
+        oracle_signature,
+    )
+except ImportError:  # direct script execution (sanity tests)
+    from ensemble import (
+        get_ensemble,
+        action_class,
+        action_name,
+        ALL_CLASSES,
+        oracle_signature,
+    )
+
 # ============================================================
 # STALE (synchroniczne z colab_perceptron_multimodal.py)
 # ============================================================
@@ -346,7 +363,7 @@ class G2Model:
                            timestamp: float = 0.0) -> dict:
         numbers = numbers if numbers is not None else []
         x = self.vectorize(text, numbers, timestamp)
-        return self._predict_impl(x)
+        return self._predict_impl(x, timestamp=timestamp)
 
     def predict_raw(self, features42: list) -> dict:
         if len(features42) != N_FEATURES:
@@ -354,29 +371,54 @@ class G2Model:
                 "features42 must be exactly {} floats".format(N_FEATURES))
         return self._predict_impl(features42)
 
-    def _predict_impl(self, x42: list, temperature: float = 1.5) -> dict:
+    def _predict_impl(self, x42: list, temperature: float = 1.5,
+                      timestamp: float = 0.0) -> dict:
         self._ensure_loaded()
         logits = self._model.forward(x42)
-        y = logits.index(max(logits))
+        y_base = logits.index(max(logits))
         probs = self._softmax(logits, temperature)
 
-        # top-3 klasy (nazwy + prawdopodobieństwa)
-        ranked = sorted(zip(_CLASS_NAMES, probs), key=lambda kv: kv[1],
+        # --- ENSEMBLE: Spiral + Resonance korygują probs (weighted vote) ---
+        ens = get_ensemble()
+        refined = ens.refine(probs, x42, timestamp)
+        probs_ref = refined["probs"]
+        y_ens = probs_ref.index(max(probs_ref))
+
+        # top-3 klasy (nazwy + prawdopodobieństwa) — po ensemble
+        ranked = sorted(zip(_CLASS_NAMES, probs_ref), key=lambda kv: kv[1],
                         reverse=True)
         top3 = [{"class": name, "prob": round(float(p), 6)}
                 for name, p in ranked[:3]]
 
         # feature importance — numeryczny gradient logitu klasy zwycięskiej
-        importance = self._feature_importance(x42, logits, y)
+        importance = self._feature_importance(x42, logits, y_base)
+
+        # --- ACTION HEAD: klasa akcji 16-31 (deterministyczna) ---
+        confidence = probs_ref[y_ens]
+        entropy7 = x42[4] if len(x42) > 4 else 1.0
+        act = action_class(y_ens, confidence, False, abs(entropy7))
 
         return {
-            "y": int(y),
-            "class": _CLASS_NAMES[y] if 0 <= y < len(_CLASS_NAMES) else "CLASS_{}".format(y),
+            "y": int(y_ens),
+            "y_base": int(y_base),
+            "class": _CLASS_NAMES[y_ens] if 0 <= y_ens < len(_CLASS_NAMES) else "CLASS_{}".format(y_ens),
             "logits": [round(float(v), 6) for v in logits],
-            "probs": [round(float(p), 6) for p in probs],
+            "probs": [round(float(p), 6) for p in probs_ref],
             "top3": top3,
             "feature_importance": [round(float(v), 6) for v in importance],
             "temperature": float(temperature),
+            "ensemble": {
+                "spiral": refined["spiral"],
+                "resonance": refined["resonance"],
+                "final_y": int(y_ens),
+                "base_y": int(y_base),
+                "changed": bool(y_ens != y_base),
+            },
+            "action": {
+                "y": int(act),
+                "name": action_name(act),
+            },
+            "n_classes": len(ALL_CLASSES),
             "vector": [round(float(v), 6) for v in x42],
             "meta": self.meta,
         }

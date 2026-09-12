@@ -49,6 +49,8 @@ class PluginRPCHandler(BaseHTTPRequestHandler):
       GET /v1/dashboard → {"total_predictions": ..., "accuracy": ..., ...}
       GET /v1/models → {"active": int, "versions": [...]}
       GET /v1/feedback?address=...&seq=... → {"predict_seq": ..., "correct": bool, ...}
+      GET /v1/oracle?text=...&numbers=[...] → prediction + oracle signature
+                                          (cross-chain verifiable)
     """
 
     plugin: Optional[Plugin] = None
@@ -61,6 +63,8 @@ class PluginRPCHandler(BaseHTTPRequestHandler):
         try:
             if path == "/v1/predict":
                 self._handle_predict(query)
+            elif path == "/v1/oracle":
+                self._handle_oracle(query)
             elif path == "/v1/dashboard":
                 self._handle_dashboard(query)
             elif path == "/v1/models":
@@ -112,6 +116,80 @@ class PluginRPCHandler(BaseHTTPRequestHandler):
         model.reset()
         result = model.predict_from_event(text=text, numbers=numbers, timestamp=timestamp)
 
+        self._write_json(result, 200)
+
+    def _handle_oracle(self, query: Dict[str, list]) -> None:
+        """
+        GET /v1/oracle?text=<text>&numbers=[...]&timestamp=... → cross-chain
+        verifiable prediction.
+
+        Response:
+          {
+            "y": int, "class": str,           # base 16-class decision
+            "action": {"y": int, "name": str},# action class (16-31)
+            "ensemble": {...},                # spiral + resonance meta
+            "oracle": {
+              "signature": "<sha256 hex>",    # verify with same inputs
+              "chain_id": int,
+              "algorithm": "sha256(features42|y|action|conf|ts|chain)",
+              "reproducible": True
+            },
+            ...full predict payload...
+          }
+
+        Another chain (or an off-chain verifier) can recompute the
+        signature from the published inputs and confirm integrity —
+        no access to the model weights required.
+        """
+        text = query.get("text", [""])[0]
+        timestamp = float(query.get("timestamp", [0.0])[0]) if query.get("timestamp") else 0.0
+
+        numbers = []
+        if "numbers" in query:
+            try:
+                numbers = json.loads(query["numbers"][0])
+                if not isinstance(numbers, list):
+                    numbers = []
+            except (json.JSONDecodeError, ValueError):
+                numbers = []
+
+        model = get_model()
+        model.reset()
+        result = model.predict_from_event(text=text, numbers=numbers, timestamp=timestamp)
+
+        # Cross-chain oracle signature over the deterministic payload
+        from ensemble import oracle_signature, ALL_CLASSES
+        confidence = 0.0
+        probs = result.get("probs") or []
+        y = result.get("y", 0)
+        if probs and 0 <= y < len(probs):
+            confidence = probs[y]
+
+        chain_id = 0
+        try:
+            if self.plugin and getattr(self.plugin, "config", None):
+                chain_id = int(self.plugin.config.chain_id)
+        except Exception:
+            chain_id = 0
+
+        sig = oracle_signature(
+            result.get("vector", []),
+            y,
+            (result.get("action") or {}).get("y", 16),
+            confidence,
+            timestamp,
+            chain_id,
+            0,  # height 0 for stateless queries
+        )
+
+        result["oracle"] = {
+            "signature": sig,
+            "chain_id": chain_id,
+            "algorithm": "sha256(features42|y16|action|conf|ts|chain_id|height)",
+            "action_class": (result.get("action") or {}).get("name", ""),
+            "n_classes": len(ALL_CLASSES),
+            "reproducible": True,
+        }
         self._write_json(result, 200)
 
     def _handle_dashboard(self, query: Dict[str, list]) -> None:
