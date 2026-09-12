@@ -363,7 +363,7 @@ class G2Model:
                            timestamp: float = 0.0) -> dict:
         numbers = numbers if numbers is not None else []
         x = self.vectorize(text, numbers, timestamp)
-        return self._predict_impl(x, timestamp=timestamp)
+        return self._predict_impl(x, timestamp=timestamp, numbers=numbers)
 
     def predict_raw(self, features42: list) -> dict:
         if len(features42) != N_FEATURES:
@@ -372,7 +372,8 @@ class G2Model:
         return self._predict_impl(features42)
 
     def _predict_impl(self, x42: list, temperature: float = 1.5,
-                      timestamp: float = 0.0) -> dict:
+                      timestamp: float = 0.0, numbers=None) -> dict:
+        numbers = numbers if numbers is not None else []
         self._ensure_loaded()
         logits = self._model.forward(x42)
         y_base = logits.index(max(logits))
@@ -396,7 +397,8 @@ class G2Model:
         # --- ACTION HEAD: klasa akcji 16-31 (deterministyczna) ---
         confidence = probs_ref[y_ens]
         entropy7 = x42[4] if len(x42) > 4 else 1.0
-        act = action_class(y_ens, confidence, False, abs(entropy7))
+        act = action_class(y_ens, confidence, False, abs(entropy7),
+                           numbers=numbers)
 
         return {
             "y": int(y_ens),

@@ -158,7 +158,10 @@ class PluginRPCHandler(BaseHTTPRequestHandler):
         result = model.predict_from_event(text=text, numbers=numbers, timestamp=timestamp)
 
         # Cross-chain oracle signature over the deterministic payload
-        from ensemble import oracle_signature, ALL_CLASSES
+        try:
+            from .ensemble import oracle_signature, ALL_CLASSES
+        except ImportError:  # skrypt vs pakiet
+            from ensemble import oracle_signature, ALL_CLASSES
         confidence = 0.0
         probs = result.get("probs") or []
         y = result.get("y", 0)
