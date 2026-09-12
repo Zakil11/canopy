@@ -784,7 +784,7 @@ class TestDashboardOnChain(unittest.TestCase):
     def test_dashboard_created_after_predict(self):
         """Dashboard record is created after a predict tx."""
         tx = self._make_predict_tx()
-        resp = asyncio.get_event_loop().run_until_complete(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
+        resp = asyncio.run(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
         self.assertFalse(resp.HasField('error'))
         dashboard_key = key_for_dashboard()
         self.assertIn(dashboard_key, self.plugin.state)
@@ -799,7 +799,7 @@ class TestDashboardOnChain(unittest.TestCase):
         """Dashboard accumulates multiple predictions."""
         for _ in range(3):
             tx = self._make_predict_tx()
-            resp = asyncio.get_event_loop().run_until_complete(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
+            resp = asyncio.run(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
             self.assertFalse(resp.HasField('error'))
         dashboard_key = key_for_dashboard()
         dashboard = json.loads(self.plugin.state[dashboard_key].decode('utf-8'))
@@ -810,12 +810,12 @@ class TestDashboardOnChain(unittest.TestCase):
         """Feedback updates accuracy in dashboard."""
         # First predict
         tx = self._make_predict_tx()
-        resp = asyncio.get_event_loop().run_until_complete(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
+        resp = asyncio.run(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
         self.assertFalse(resp.HasField('error'))
         # Send feedback (correct)
         msg = MessageFeedback(from_address=self.sender, predict_seq=0, correct=True, actual_class=1)
         tx = Transaction(msg=Any(type_url='type.googleapis.com/types.MessageFeedback', value=msg.SerializeToString()), fee=10)
-        resp = asyncio.get_event_loop().run_until_complete(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
+        resp = asyncio.run(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
         self.assertFalse(resp.HasField('error'))
         dashboard_key = key_for_dashboard()
         dashboard = json.loads(self.plugin.state[dashboard_key].decode('utf-8'))
@@ -827,7 +827,7 @@ class TestDashboardOnChain(unittest.TestCase):
         """Dashboard tracks market creation."""
         msg = MessageCreateMarket(from_address=self.sender, question='Will G2 predict?', resolution_height=100, stake=100)
         tx = Transaction(msg=Any(type_url='type.googleapis.com/types.MessageCreateMarket', value=msg.SerializeToString()), fee=10)
-        resp = asyncio.get_event_loop().run_until_complete(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
+        resp = asyncio.run(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
         self.assertFalse(resp.HasField('error'))
         dashboard_key = key_for_dashboard()
         dashboard = json.loads(self.plugin.state[dashboard_key].decode('utf-8'))
@@ -838,7 +838,7 @@ class TestDashboardOnChain(unittest.TestCase):
         """Dashboard tracks model registration."""
         msg = MessageRegisterModel(from_address=self.sender, version=1, weights_hash='abc123', accuracy=0.95, in_dim=42, n_classes=16, description='test')
         tx = Transaction(msg=Any(type_url='type.googleapis.com/types.MessageRegisterModel', value=msg.SerializeToString()), fee=10)
-        resp = asyncio.get_event_loop().run_until_complete(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
+        resp = asyncio.run(self.contract.deliver_tx(PluginDeliverRequest(tx=tx)))
         self.assertFalse(resp.HasField('error'))
         dashboard_key = key_for_dashboard()
         dashboard = json.loads(self.plugin.state[dashboard_key].decode('utf-8'))
@@ -862,7 +862,7 @@ class TestDynamicFee(unittest.TestCase):
     def _check_tx(self, msg, type_url, fee):
         """Run check_tx with the given message and fee."""
         tx = Transaction(msg=Any(type_url=type_url, value=msg.SerializeToString()), fee=fee)
-        return asyncio.get_event_loop().run_until_complete(self.contract.check_tx(PluginCheckRequest(tx=tx)))
+        return asyncio.run(self.contract.check_tx(PluginCheckRequest(tx=tx)))
 
     def test_no_dashboard_uses_base_fee(self):
         """Without dashboard, fee must be at least base predict_fee (100)."""
